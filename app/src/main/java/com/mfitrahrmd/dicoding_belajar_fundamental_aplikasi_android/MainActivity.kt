@@ -1,87 +1,62 @@
 package com.mfitrahrmd.dicoding_belajar_fundamental_aplikasi_android
 
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.util.Log
-import android.view.LayoutInflater
-import android.view.View
-import android.view.View.OnClickListener
-import android.view.ViewGroup
-import android.widget.Toast
-import androidx.fragment.app.Fragment
-import com.mfitrahrmd.dicoding_belajar_fundamental_aplikasi_android.databinding.AboutBinding
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.DividerItemDecoration
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.chuckerteam.chucker.api.ChuckerInterceptor
+import com.google.gson.annotations.SerializedName
 import com.mfitrahrmd.dicoding_belajar_fundamental_aplikasi_android.databinding.ActivityMainBinding
-import com.mfitrahrmd.dicoding_belajar_fundamental_aplikasi_android.databinding.ContentBinding
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import retrofit2.Call
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.GET
+import retrofit2.http.Query
 
-class ContentF : Fragment() {
-    private lateinit var _binding: ContentBinding
-    private var _onClick: OnClickListener? = null
+data class User(
+    @field:SerializedName("id") val id: Int,
+    @field:SerializedName("email") val email: String,
+    @field:SerializedName("first_name") val firstName: String,
+    @field:SerializedName("last_name") val lastName: String,
+    @field:SerializedName("avatar") val avatar: String
+)
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View? {
-        _binding = ContentBinding.inflate(inflater, container, false)
+data class ResponseUser(
+    @field:SerializedName("page") val page: Int,
+    @field:SerializedName("per_page") val perPage: Int,
+    @field:SerializedName("total") val total: Int,
+    @field:SerializedName("total_pages") val totalPages: Int,
+    @field:SerializedName("data") val data: List<User>
+)
 
-        return _binding.root
-    }
-
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        Log.d("debug",_onClick.toString())
-        _binding.tvName.text = "Content"
-        _binding.btnMove.setOnClickListener(_onClick)
-    }
-
-    fun setOnClickListener(l: OnClickListener) {
-        _onClick = l
-    }
+interface ApiService {
+    @GET("users")
+    fun getListUsers(@Query("page") page: Int): Call<ResponseUser>
 }
 
-class AboutF : Fragment() {
-    companion object {
-        val EXTRA_TEXT = "extra_text"
-    }
-
-    private lateinit var _binding: AboutBinding
-    private var _text: String? = null
-    internal var optionDialogListener: OptionDialogFragment.OnOptionDialogListener = object : OptionDialogFragment.OnOptionDialogListener {
-        override fun onOptionChosen(text: String?) {
-            Toast.makeText(requireActivity(), text, Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View? {
-        _binding = AboutBinding.inflate(inflater, container, false)
-
-        return _binding.root
-    }
-
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-
-        if (savedInstanceState != null) {
-            _text = savedInstanceState.getString(EXTRA_TEXT)
-        }
-
-        _text = arguments?.getString(EXTRA_TEXT)
-
-        with(_binding) {
-            tvText.text = _text
-            btnShowDialog.setOnClickListener {
-                val optionDialogFragment = OptionDialogFragment()
-                val fragmentManager = childFragmentManager
-
-                optionDialogFragment.show(fragmentManager, OptionDialogFragment::class.java.simpleName)
-            }
-        }
-    }
-}
+//class TodosAdapter(val todos: List<Todo>) : RecyclerView.Adapter<TodosAdapter.VH>() {
+//    class VH(val binding: ItemTodoBinding) : RecyclerView.ViewHolder(binding.root) {
+//
+//    }
+//
+//    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+//        val binding =
+//            ItemTodoBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+//
+//        return VH(binding)
+//    }
+//
+//    override fun getItemCount(): Int = todos.size
+//
+//    override fun onBindViewHolder(holder: VH, position: Int) {
+//        holder.binding.tvTitle.text = todos[position].title
+//    }
+//}
 
 class MainActivity : AppCompatActivity() {
     private lateinit var _binding: ActivityMainBinding
@@ -89,25 +64,34 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         _binding = ActivityMainBinding.inflate(layoutInflater)
-        _binding.tvText.text = "Hello World!"
-        val cf = ContentF()
-        val af = AboutF()
-        cf.setOnClickListener {
-            Log.d("debug", "ok")
-            af.arguments = Bundle().also {
-                it.putString(AboutF.EXTRA_TEXT, "About Fragment")
-            }
-            supportFragmentManager
-                .beginTransaction()
-                .replace(_binding.flContent.id, af)
-                .addToBackStack(null)
-                .commit()
-        }
-        supportFragmentManager
-            .beginTransaction()
-            .add(_binding.flContent.id, cf, ContentF::class.java.simpleName)
-            .commit()
-
         setContentView(_binding.root)
+
+        val chucker =
+            OkHttpClient.Builder().addInterceptor(ChuckerInterceptor(this@MainActivity)).build()
+
+        val api = Retrofit.Builder().baseUrl("https://reqres.in/api/")
+            .addConverterFactory(GsonConverterFactory.create()).client(chucker).build()
+            .create(ApiService::class.java)
+
+        _binding.btnStart.setOnClickListener {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val client = api.getListUsers(1)
+
+                val response = client.execute()
+
+                if (response.isSuccessful) {
+                    withContext(Dispatchers.Main) {
+                        _binding.tvText.text = response.body().toString()
+                    }
+                }
+            }
+        }
+        val layout = LinearLayoutManager(this@MainActivity)
+        _binding.listTodos.layoutManager = layout
+        _binding.listTodos.addItemDecoration(
+            DividerItemDecoration(
+                this@MainActivity, layout.orientation
+            )
+        )
     }
 }
